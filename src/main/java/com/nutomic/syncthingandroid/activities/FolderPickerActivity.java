@@ -61,8 +61,6 @@ public class FolderPickerActivity extends SyncthingActivity
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        getSupportActionBar().setDisplayHomeAsUpEnabled(true);
-
         setContentView(R.layout.activity_folder_picker);
         mListView = (ListView) findViewById(android.R.id.list);
         mListView.setOnItemClickListener(this);
@@ -227,6 +225,7 @@ public class FolderPickerActivity extends SyncthingActivity
 
     @Override
     public void onItemClick(AdapterView<?> adapterView, View view, int i, long l) {
+        @SuppressWarnings("unchecked")
         ArrayAdapter<File> adapter = (ArrayAdapter<File>) mListView.getAdapter();
         File f = adapter.getItem(i);
         if (f.isDirectory()) {
@@ -235,18 +234,14 @@ public class FolderPickerActivity extends SyncthingActivity
         }
     }
 
-    @SuppressLint("NewApi")
     private void invalidateOptions() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB)
-            invalidateOptionsMenu();
-        else
-            supportInvalidateOptionsMenu();
+        invalidateOptionsMenu();
     }
 
     private class FileAdapter extends ArrayAdapter<File> {
 
         public FileAdapter(Context context) {
-            super(context, android.R.layout.simple_list_item_1);
+            super(context, R.layout.item_folder_picker);
         }
 
         @Override

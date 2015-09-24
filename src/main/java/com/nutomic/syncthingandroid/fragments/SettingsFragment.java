@@ -1,5 +1,7 @@
 package com.nutomic.syncthingandroid.fragments;
 
+import android.app.AlertDialog;
+import android.content.DialogInterface;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.os.AsyncTask;
@@ -49,15 +51,17 @@ public class SettingsFragment extends PreferenceFragment
     private CheckBoxPreference mAlwaysRunInBackground;
     private CheckBoxPreference mSyncOnlyCharging;
     private CheckBoxPreference mSyncOnlyWifi;
-    private Preference mUseRoot;
+    private CheckBoxPreference mUseRoot;
     private PreferenceScreen mOptionsScreen;
     private PreferenceScreen mGuiScreen;
     private SyncthingService mSyncthingService;
 
     @Override
     public void onApiChange(SyncthingService.State currentState) {
-        mOptionsScreen.setEnabled(currentState == SyncthingService.State.ACTIVE);
-        mGuiScreen.setEnabled(currentState == SyncthingService.State.ACTIVE);
+        boolean enabled = currentState == SyncthingService.State.ACTIVE;
+        mOptionsScreen.setEnabled(enabled);
+        mGuiScreen.setEnabled(enabled);
+        mUseRoot.setEnabled(enabled);
 
         if (currentState == SyncthingService.State.ACTIVE) {
             Preference syncthingVersion = getPreferenceScreen().findPreference(SYNCTHING_VERSION_KEY);
@@ -120,7 +124,7 @@ public class SettingsFragment extends PreferenceFragment
         mSyncOnlyCharging = (CheckBoxPreference)
                 findPreference(SyncthingService.PREF_SYNC_ONLY_CHARGING);
         mSyncOnlyWifi = (CheckBoxPreference) findPreference(SyncthingService.PREF_SYNC_ONLY_WIFI);
-        mUseRoot = findPreference(SyncthingService.PREF_USE_ROOT);
+        mUseRoot = (CheckBoxPreference) findPreference(SyncthingService.PREF_USE_ROOT);
         Preference appVersion = screen.findPreference(APP_VERSION_KEY);
         mOptionsScreen = (PreferenceScreen) screen.findPreference(SYNCTHING_OPTIONS_KEY);
         mGuiScreen = (PreferenceScreen) screen.findPreference(SYNCTHING_GUI_KEY);
@@ -138,7 +142,6 @@ public class SettingsFragment extends PreferenceFragment
         mAlwaysRunInBackground.setOnPreferenceChangeListener(this);
         mSyncOnlyCharging.setOnPreferenceChangeListener(this);
         mSyncOnlyWifi.setOnPreferenceChangeListener(this);
-        new TestRootTask().execute();
         mUseRoot.setOnPreferenceChangeListener(this);
         screen.findPreference(EXPORT_CONFIG).setOnPreferenceClickListener(this);
         screen.findPreference(IMPORT_CONFIG).setOnPreferenceClickListener(this);
@@ -164,8 +167,14 @@ public class SettingsFragment extends PreferenceFragment
         }
 
         @Override
-        protected void onPostExecute(Boolean result) {
-            mUseRoot.setEnabled(result);
+        protected void onPostExecute(Boolean haveRoot) {
+            if (haveRoot) {
+                mSyncthingService.getApi().requireRestart(getActivity());
+                mUseRoot.setChecked(true);
+            } else {
+                Toast.makeText(getActivity(), R.string.toast_root_denied, Toast.LENGTH_SHORT)
+                        .show();
+            }
         }
     }
 
@@ -233,9 +242,13 @@ public class SettingsFragment extends PreferenceFragment
                 mSyncOnlyWifi.setChecked(false);
             }
         } else if (preference.equals(mUseRoot)) {
-            if (!(Boolean) o)
+            if ((Boolean) o) {
+                new TestRootTask().execute();
+                return false;
+            } else {
                 new Thread(new ChownFilesRunnable()).start();
-            requireRestart = true;
+                requireRestart = true;
+            }
         } else if (preference.getKey().equals(DEVICE_NAME_KEY)) {
             RestApi.Device old = mSyncthingService.getApi().getLocalDevice();
             RestApi.Device updated = new RestApi.Device();
@@ -308,19 +321,42 @@ public class SettingsFragment extends PreferenceFragment
     public boolean onPreferenceClick(Preference preference) {
         switch (preference.getKey()) {
             case EXPORT_CONFIG:
-                mSyncthingService.exportConfig();
-                Toast.makeText(getActivity(), getString(R.string.config_export_successful,
-                        SyncthingService.EXPORT_PATH), Toast.LENGTH_LONG).show();
+                new AlertDialog.Builder(getActivity())
+                        .setMessage(R.string.dialog_confirm_export)
+                        .setPositiveButton(android.R.string.yes,
+                                new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface dialog, int which) {
+                                mSyncthingService.exportConfig();
+                                Toast.makeText(getActivity(),
+                                        getString(R.string.config_export_successful,
+                                        SyncthingService.EXPORT_PATH), Toast.LENGTH_LONG).show();
+                            }
+                        })
+                        .setNegativeButton(android.R.string.no, null)
+                        .show();
                 return true;
             case IMPORT_CONFIG:
-                if (mSyncthingService.importConfig()) {
-                    Toast.makeText(getActivity(), getString(R.string.config_imported_successful),
-                            Toast.LENGTH_SHORT).show();
-                    mSyncthingService.getApi().requireRestart(getActivity(), false);
-                } else {
-                    Toast.makeText(getActivity(), getString(R.string.config_import_failed,
-                            SyncthingService.EXPORT_PATH), Toast.LENGTH_LONG).show();
-                }
+                new AlertDialog.Builder(getActivity())
+                        .setMessage(R.string.dialog_confirm_import)
+                        .setPositiveButton(android.R.string.yes,
+                                new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface dialog, int which) {
+                                if (mSyncthingService.importConfig()) {
+                                    Toast.makeText(getActivity(),
+                                            getString(R.string.config_imported_successful),
+                                            Toast.LENGTH_SHORT).show();
+                                    mSyncthingService.getApi().requireRestart(getActivity(), false);
+                                } else {
+                                    Toast.makeText(getActivity(),
+                                            getString(R.string.config_import_failed,
+                                            SyncthingService.EXPORT_PATH), Toast.LENGTH_LONG).show();
+                                }
+                            }
+                        })
+                        .setNegativeButton(android.R.string.no, null)
+                        .show();
                 return true;
             case SYNCTHING_RESET:
                 ((SyncthingActivity) getActivity()).getApi().resetSyncthing(getActivity());
